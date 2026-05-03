@@ -156,3 +156,8 @@ temp/
 
 # Turbo
 .turbo
+
+# Alembic
+alembic.ini
+alembic/versions/*.pyc
+alembic/versions/*.py

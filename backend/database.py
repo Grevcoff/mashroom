@@ -16,6 +16,22 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///mushroom_app.db")
 
+# Определение драйвера базы данных
+if DATABASE_URL.startswith("postgresql"):
+    # PostgreSQL для продакшена
+    engine_kwargs = {
+        "echo": False,
+        "future": True,
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }
+else:
+    # SQLite для локальной разработки
+    engine_kwargs = {
+        "echo": False,
+        "future": True,
+    }
+
 # Глобальные переменные для работы с БД
 engine = None
 async_session_maker = None
@@ -110,23 +126,30 @@ class Transaction(Base):
         return f"<Transaction(id={self.id}, amount={self.amount}, type='{self.type}')>"
 
 
-async def init_db() -> None:
-    """Инициализация базы данных и создание таблиц"""
+async def init_db(create_tables: bool = False) -> None:
+    """Инициализация базы данных
+    
+    Args:
+        create_tables: Если True, создает таблицы автоматически (для разработки)
+                      Если False, ожидает что таблицы созданы через миграции
+    """
     global engine, async_session_maker
     
-    engine = create_async_engine(
-        DATABASE_URL,
-        echo=False,  # Включить для отладки SQL-запросов
-        future=True
-    )
-    
-    async_session_maker = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-    
-    # Создание всех таблиц
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        engine = create_async_engine(DATABASE_URL, **engine_kwargs)
+        
+        async_session_maker = async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
+        )
+        
+        # Создание таблиц только для разработки
+        if create_tables:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                
+    except Exception as e:
+        print(f"Ошибка инициализации БД: {e}")
+        raise
 
 
 async def close_db() -> None:

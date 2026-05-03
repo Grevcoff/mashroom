@@ -10,6 +10,7 @@ Telegram Mini App для учета домашнего грибоводства 
 - Аналитику и расчет прибыли
 - Экспорт данных в CSV
 - Адаптивный интерфейс под Telegram
+- **Поддержка SQLite (локально) и PostgreSQL (продакшен)**
 
 ## 🛠 Технологический стек
 
@@ -17,7 +18,8 @@ Telegram Mini App для учета домашнего грибоводства 
 - **Python 3.10+**
 - **FastAPI** - веб-фреймворк
 - **SQLAlchemy 2.0** - ORM
-- **aiosqlite** - асинхронный драйвер SQLite
+- **aiosqlite** - асинхронный драйвер SQLite (локально)
+- **asyncpg** - асинхронный драйвер PostgreSQL (продакшен)
 - **Pydantic** - валидация данных
 - **Telegram WebApp Auth** - аутентификация через Telegram
 
@@ -67,6 +69,8 @@ cd tgmushroom
 
 ### 2. Настройка Backend
 
+#### Локальная разработка (SQLite)
+
 ```bash
 cd backend
 
@@ -87,6 +91,30 @@ cp .env.example .env
 
 # Настройка переменных окружения
 # Откройте .env и добавьте TELEGRAM_BOT_TOKEN
+# DATABASE_URL оставьте как есть для SQLite
+
+# Быстрая настройка БД (рекомендуется)
+python setup_database.py full-dev
+
+# Или по шагам:
+# Инициализация миграций Alembic
+python migrate.py init
+
+# Создание первой миграции
+python migrate.py create "initial migration"
+
+# Применение миграций
+python migrate.py upgrade
+```
+
+#### Продакшен (PostgreSQL)
+
+```bash
+# Для разработки с PostgreSQL локально
+docker-compose up -d postgres
+
+# Или настройте DATABASE_URL в .env:
+DATABASE_URL=postgresql://user:password@host:5432/dbname
 ```
 
 ### 3. Настройка Frontend
@@ -98,7 +126,10 @@ cd frontend
 npm install
 
 # Создание .env файла
-echo "VITE_API_URL=http://localhost:8000/api" > .env
+cp .env.example .env
+
+# Настройка переменных окружения
+# Откройте .env и установите правильный API URL
 ```
 
 ### 4. Запуск приложения
@@ -130,17 +161,53 @@ npm run dev
 
 ## 🐳 Docker развертывание
 
-### 1. Сборка и запуск
+### 1. Полный стек (Frontend + Backend + PostgreSQL)
 
 ```bash
 # В корневой директории
 docker-compose up -d
 ```
 
-### 2. Остановка
+Запустятся:
+- **Frontend** на http://localhost:3000
+- **Backend API** на http://localhost:8000
+- **PostgreSQL** на localhost:5432
+- **Данные сохранятся** в volume `postgres_data`
+
+### 2. Только Backend + PostgreSQL
+
+```bash
+# В backend директории
+docker-compose up -d
+```
+
+### 3. Остановка
 
 ```bash
 docker-compose down
+# С удалением данных
+docker-compose down -v
+```
+
+### 4. Создание тестовых данных
+
+```bash
+# В контейнере backend
+docker-compose exec backend python seed.py
+
+# Очистка данных
+docker-compose exec backend python seed.py --clear
+```
+
+### 5. Health Checks
+
+```bash
+# Проверка статуса сервисов
+docker-compose ps
+
+# Логи
+docker-compose logs -f backend
+docker-compose logs -f frontend
 ```
 
 ## 📱 Использование в Telegram
@@ -162,7 +229,11 @@ docker-compose down
 - `POST /api/transactions` - создание транзакции
 - `GET /api/stats` - получение статистики
 
-## 🗄 База данных
+## 🗄 База данных и миграции
+
+### Поддерживаемые БД
+- **SQLite** - для локальной разработки
+- **PostgreSQL** - для продакшена
 
 ### Схема
 
@@ -179,6 +250,37 @@ transactions   -- Транзакции
 - **Plan**: id, user_id, name, status, start_date, end_date, revenue, yield_kg
 - **Category**: id, user_id, name, type
 - **Transaction**: id, plan_id, category_id, amount, type, comment, date
+
+### Управление миграциями (Alembic)
+
+#### Основные команды
+```bash
+# Инициализация Alembic (один раз)
+python migrate.py init
+
+# Создание новой миграции
+python migrate.py create "add new field to users"
+
+# Применение миграций
+python migrate.py upgrade
+
+# Откат миграций
+python migrate.py downgrade -1
+
+# История миграций
+python migrate.py history
+
+# Текущая ревизия
+python migrate.py current
+```
+
+#### В разработке
+- Таблицы создаются автоматически при `DEBUG=true`
+- Для изменения структуры используйте миграции
+
+#### В продакшене
+- Используйте только миграции: `python migrate.py upgrade head`
+- Никогда не используйте автоматическое создание таблиц
 
 ## 🎨 Особенности UI/UX
 
@@ -226,19 +328,81 @@ transactions   -- Транзакции
 - Фильтрация по user_id
 - Нет хранения паролей
 
-## 🚀 Развертывание
+## 🚀 Развертывание в продакшене
 
-### Backend (Render)
-1. Загрузите код на GitHub
-2. Создайте сервис на Render
-3. Настройте переменные окружения
-4. Подключите базу данных PostgreSQL
+### Backend (Render с PostgreSQL)
+
+1. **Подготовка GitHub**
+   ```bash
+   git add .
+   git commit -m "feat: Add PostgreSQL support"
+   git push
+   ```
+
+2. **Создание PostgreSQL на Render**
+   - Зайдите в Render Dashboard
+   - "New" → "PostgreSQL"
+   - Имя: `mushroom-db`
+   - Plan: Free (включено 90 дней)
+   - Сохраните credentials
+
+3. **Создание Web Service**
+   - "New" → "Web Service"
+   - Connect GitHub репозиторий
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - **Environment Variables:**
+     ```
+     TELEGRAM_BOT_TOKEN=your_token
+     DATABASE_URL=postgresql://user:password@host:5432/dbname
+     CORS_ORIGINS=https://your-app.vercel.app
+     DEBUG=false
+     ```
 
 ### Frontend (Vercel)
-1. Загрузите код на GitHub
-2. Создайте проект на Vercel
-3. Настройте переменные окружения
-4. Автоматический деплой
+
+1. **Создание проекта**
+   - Зайдите в [Vercel Dashboard](https://vercel.com/dashboard)
+   - `Add New` → `Project`
+   - Выберите GitHub репозиторий
+   - Root Directory: `frontend`
+
+2. **Environment Variables**
+   ```
+   VITE_API_URL=https://your-app-name.onrender.com/api
+   ```
+
+3. **Автоматический деплой**
+   - Каждый push в main ветку
+   - Автоматическое обновление
+
+4. **Локальная разработка**
+   ```bash
+   cd frontend
+   cp .env.example .env
+   # Отредактируйте .env для локального API
+   npm install
+   npm run dev
+   ```
+
+### Railway (альтернатива Render)
+
+```bash
+# Установка Railway CLI
+npm install -g @railway/cli
+
+# Логин
+railway login
+
+# Создание проекта
+railway new mushroom-app
+
+# Добавление PostgreSQL
+railway add postgresql
+
+# Деплой
+railway up
+```
 
 ## 🐛 Отладка
 

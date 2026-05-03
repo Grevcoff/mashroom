@@ -4,6 +4,7 @@ REST API для Telegram Mini App по учету грибоводства
 """
 
 import os
+import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
@@ -14,6 +15,13 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 from database import init_db, close_db
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO if os.getenv("DEBUG", "false").lower() == "true" else logging.WARNING,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 from auth import get_current_user
 from crud import (
     # Планы
@@ -68,10 +76,27 @@ class TransactionUpdate(BaseModel):
 async def lifespan(app: FastAPI):
     """Инициализация и очистка при запуске/остановке"""
     # Запуск
-    await init_db()
+    logger.info("Запуск приложения...")
+    
+    try:
+        # Для разработки создаем таблицы автоматически
+        # В продакшене используйте миграции: alembic upgrade head
+        create_tables = os.getenv("DEBUG", "false").lower() == "true"
+        await init_db(create_tables=create_tables)
+        logger.info("База данных инициализирована")
+    except Exception as e:
+        logger.error(f"Ошибка инициализации БД: {e}")
+        raise
+    
     yield
+    
     # Остановка
-    await close_db()
+    logger.info("Остановка приложения...")
+    try:
+        await close_db()
+        logger.info("Соединения с БД закрыты")
+    except Exception as e:
+        logger.error(f"Ошибка закрытия БД: {e}")
 
 
 # ===== Создание FastAPI приложения =====
