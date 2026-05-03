@@ -16,34 +16,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///mushroom_app.db")
+# Принудительно используем SQLite для деплоя
+DATABASE_URL = "sqlite:///mushroom_app.db"
 
-# Определение драйвера базы данных
-if DATABASE_URL.startswith("postgresql"):
-    # PostgreSQL для продакшена
-    engine_kwargs = {
-        "echo": False,
-        "future": True,
-        "pool_pre_ping": True,
-        "pool_recycle": 300,
-        "pool_size": 5,
-        "max_overflow": 10,
-    }
-    
-    # Поддержка Supabase и других облачных БД
-    if "supabase" in DATABASE_URL or "sslmode" in DATABASE_URL:
-        engine_kwargs["connect_args"] = {
-            "sslmode": "require",
-            "ssl": {"sslmode": "require"}
-        }
-    else:
-        engine_kwargs["connect_args"] = {}
-else:
-    # SQLite для локальной разработки
-    engine_kwargs = {
-        "echo": False,
-        "future": True,
-    }
+# Используем только SQLite для избежания проблем с компиляцией
+# PostgreSQL поддержка отключена из-за asyncpg зависимостей
+engine_kwargs = {
+    "echo": False,
+    "future": True,
+    "poolclass": StaticPool,
+    "connect_args": {
+        "check_same_thread": False,
+    },
+}
 
 # Глобальные переменные для работы с БД
 engine = None
