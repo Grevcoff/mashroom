@@ -17,9 +17,10 @@ import signal
 import sys
 import asyncio
 
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+# Rate limiting temporarily removed due to Rust compilation issues
+# from slowapi import Limiter, _rate_limit_exceeded_handler
+# from slowapi.util import get_remote_address
+# from slowapi.errors import RateLimitExceeded
 
 from database import init_db, close_db
 
@@ -169,10 +170,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Rate limiting
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Rate limiting temporarily removed due to Rust compilation issues
+# limiter = Limiter(key_func=get_remote_address)
+# app.state.limiter = limiter
+# app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # ===== Обработка ошибок =====
@@ -621,7 +622,6 @@ async def get_time_series_stats(
 # ===== HEALTH CHECK =====
 
 @app.get("/api/health")
-@limiter.limit("100/minute")
 async def health_check(request: Request):
     """Проверка здоровья API"""
     return {
