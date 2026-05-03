@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    restart: always
+    container_name: mushroom-api
+    ports:
+      - "8000:8000"
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DATABASE_URL=sqlite+aiosqlite:///data/mushroom_app.db
+      - DEBUG=false
+      - CORS_ORIGINS=https://your-frontend-domain.vercel.app
+    volumes:
+      - ./data:/app/data
+    networks:
+      - mushroom-network
+
+networks:
+  mushroom-network:
+    driver: bridge
