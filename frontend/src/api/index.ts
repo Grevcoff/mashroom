@@ -17,10 +17,28 @@ export interface ApiError {
   status_code: number;
 }
 
-// Базовый URL API с fallback
-const API_BASE_URL = 
-  import.meta.env.VITE_API_URL || 
-  (import.meta.env.DEV ? 'http://localhost:8000/api' : '/api');
+// Базовый URL API с улучшенным fallback
+const getApiBaseUrl = (): string => {
+  // 1. Переменная окружения (высший приоритет)
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // 2. Для разработки
+  if (import.meta.env.DEV) {
+    return 'http://localhost:8000/api';
+  }
+  
+  // 3. Для продакшена на Vercel (прокси через /api)
+  if (import.meta.env.MODE === 'production') {
+    return '/api';
+  }
+  
+  // 4. Fallback
+  return 'http://localhost:8000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 /**
  * Создание Axios инстанса с настройками для Telegram WebApp

@@ -13,15 +13,65 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from datetime import datetime
+import signal
+import sys
+import asyncio
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from database import init_db, close_db
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO if os.getenv("DEBUG", "false").lower() == "true" else logging.WARNING,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+LOG_LEVEL = logging.INFO if os.getenv("DEBUG", "false").lower() == "true" else logging.WARNING
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+if os.getenv("ENVIRONMENT") == "production":
+    # JSON логи для продакшена
+    import json
+    from datetime import datetime
+    
+    class JSONFormatter(logging.Formatter):
+        def format(self, record):
+            log_entry = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": record.getMessage(),
+                "module": record.module,
+                "function": record.funcName,
+                "line": record.lineno
+            }
+            if record.exc_info:
+                log_entry["exception"] = self.formatException(record.exc_info)
+            return json.dumps(log_entry)
+    
+    handler = logging.StreamHandler()
+    handler.setFormatter(JSONFormatter())
+    logging.basicConfig(level=LOG_LEVEL, handlers=[handler])
+else:
+    # Обычные логи для разработки
+    logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
+
 logger = logging.getLogger(__name__)
+
+# Rate limiting
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Graceful shutdown
+shutdown_event = asyncio.Event()
+
+def signal_handler(signum, frame):
+    """Обработчик сигналов для graceful shutdown"""
+    logger.info(f"Получен сигнал {signum}, начинаю graceful shutdown...")
+    shutdown_event.set()
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
 from auth import get_current_user
 from crud import (
     # Планы
@@ -101,6 +151,9 @@ async def lifespan(app: FastAPI):
 
 # ===== Создание FastAPI приложения =====
 
+# Получение порта для Koyeb и других платформ
+PORT = int(os.getenv("PORT", "8000"))
+
 app = FastAPI(
     title="Mushroom Mini App API",
     description="API для Telegram Mini App по учету домашнего грибоводства",
@@ -108,13 +161,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Настройка CORS
-cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+# Настройка CORS с поддержкой множественных доменов
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+# Очистка от пустых строк
+cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -565,9 +621,15 @@ async def get_time_series_stats(
 # ===== HEALTH CHECK =====
 
 @app.get("/api/health")
-async def health_check():
+@limiter.limit("100/minute")
+async def health_check(request: Request):
     """Проверка здоровья API"""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+        "port": PORT
+    }
 
 
 # ===== ЗАПУСК =====

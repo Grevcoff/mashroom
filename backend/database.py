@@ -3,18 +3,20 @@
 """
 
 import os
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, date, timedelta
+from typing import Optional, List, AsyncGenerator
+from decimal import Decimal
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, Float, Boolean, DateTime, Date, Text, Numeric, ForeignKey, select, func
+from sqlalchemy.pool import StaticPool
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///mushroom_app.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///mushroom_app.db")
 
 # Определение драйвера базы данных
 if DATABASE_URL.startswith("postgresql"):
@@ -24,7 +26,18 @@ if DATABASE_URL.startswith("postgresql"):
         "future": True,
         "pool_pre_ping": True,
         "pool_recycle": 300,
+        "pool_size": 5,
+        "max_overflow": 10,
     }
+    
+    # Поддержка Supabase и других облачных БД
+    if "supabase" in DATABASE_URL or "sslmode" in DATABASE_URL:
+        engine_kwargs["connect_args"] = {
+            "sslmode": "require",
+            "ssl": {"sslmode": "require"}
+        }
+    else:
+        engine_kwargs["connect_args"] = {}
 else:
     # SQLite для локальной разработки
     engine_kwargs = {
